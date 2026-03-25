@@ -1,0 +1,47 @@
+name: Weekly Review Pulse
+
+on:
+  schedule:
+    # Runs weekly. GitHub cron uses UTC; adjust this value to match your local 3:35 PM Monday.
+    - cron: "35 10 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  run-weekly-pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run scheduler (single tick)
+        env:
+          REVIEW_PULSE_GROQ_API_KEY: ${{ secrets.REVIEW_PULSE_GROQ_API_KEY }}
+          REVIEW_PULSE_GEMINI_API_KEY: ${{ secrets.REVIEW_PULSE_GEMINI_API_KEY }}
+          REVIEW_PULSE_GROQ_MODEL: ${{ secrets.REVIEW_PULSE_GROQ_MODEL }}
+          REVIEW_PULSE_EMAIL_PROVIDER: gmail
+          REVIEW_PULSE_EMAIL_USERNAME: ${{ secrets.REVIEW_PULSE_EMAIL_USERNAME }}
+          REVIEW_PULSE_EMAIL_PASSWORD: ${{ secrets.REVIEW_PULSE_EMAIL_PASSWORD }}
+          # Optional: enable remote collection instead of using existing data/phase2/*.jsonl
+          REVIEW_PULSE_APP_STORE_APP_ID: ${{ secrets.REVIEW_PULSE_APP_STORE_APP_ID }}
+          REVIEW_PULSE_GOOGLE_PLAY_PACKAGE: ${{ secrets.REVIEW_PULSE_GOOGLE_PLAY_PACKAGE }}
+        run: |
+          review-pulse-scheduler \
+            --run-once \
+            --max-reviews 1000 \
+            --weeks-back 8 \
+            --recipient-email johnytinu18@gmail.com \
+            --recipient-name tinu \
+            --send-now \
+            --log-file data/phase7/scheduler_ci.log
+

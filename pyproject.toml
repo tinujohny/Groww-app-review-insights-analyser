@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "review-pulse"
+version = "0.1.0"
+description = "Weekly app review pulse pipeline (Phase 1 foundations)"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
+  "langdetect>=1.0.9",
+  "emoji>=2.0",
+  "python-dateutil>=2.8",
+  "google-play-scraper>=1.2.7",
+  "groq>=0.4",
+  "google-generativeai>=0.8",
+  "fastapi>=0.110",
+  "uvicorn>=0.27",
+  "apscheduler>=3.10",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+review-pulse-phase1 = "phase1.phase1_run:main"
+review-pulse-phase2-ingest = "phase2.phase2_run:main"
+review-pulse-collect = "phase2.collect_run:main"
+review-pulse-phase4-themes = "phase4.phase4_run:main"
+review-pulse-phase5-note = "phase5.phase5_run:main"
+review-pulse-phase6-draft = "phase6.phase6_run:main"
+review-pulse-api = "phase7.server:main"
+review-pulse-run-weekly = "phase7.weekly_run_cli:main"
+review-pulse-scheduler = "phase7.weekly_scheduler:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"

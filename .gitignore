@@ -1,0 +1,16 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+# Ephemeral CLI outputs (per-phase data dirs)
+data/phase2/last_*.json
+data/phase2/last_*.jsonl
+# Large collected review dumps (uncomment to track smaller samples)
+# data/phase2/collected_*.jsonl
+data/phase3/last_*

@@ -1,0 +1,4 @@
+Star Rating,Review Text,Review Last Update Date And Time
+5,"This is a longer English review that has enough words for our pipeline to accept it without issues.",2024-06-10 12:00:00
+4,"Too short",2024-06-11 12:00:00
+3,"Another valid longer review text here with sufficient word count for validation rules",2024-06-12 09:30:00
