@@ -13,6 +13,9 @@ node_modules
 webui/node_modules
 webui/.next
 data
+!data/phase2/
+!data/phase2/collected_*_sample.jsonl
+!data/.gitkeep
 .env
 .env.*
 !/.env.example

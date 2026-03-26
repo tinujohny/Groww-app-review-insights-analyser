@@ -124,6 +124,7 @@ This repo supports Railway Docker deploy using:
 - `railway.toml` (`builder = "DOCKERFILE"`)
 
 Railway will build and run `review-pulse-api` from the container. The API reads `PORT` automatically.
+The container also includes `data/phase2/collected_*_sample.jsonl` so `/runs/weekly` has a baseline input even before remote collection is configured.
 
 Set these Railway environment variables:
 

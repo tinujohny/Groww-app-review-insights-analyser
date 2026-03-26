@@ -9,6 +9,7 @@ WORKDIR /app
 # Install project first for better layer caching.
 COPY pyproject.toml README.md ./
 COPY src ./src
+COPY data/phase2 ./data/phase2
 
 RUN pip install --upgrade pip && pip install .
 
