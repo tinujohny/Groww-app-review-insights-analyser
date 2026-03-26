@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from phase1.config import get_settings
+from phase2.collectors.target_collect import collect_app_store_until_target, collect_google_play_until_target
 from phase7.run_pipeline import FileRunTracker, run_weekly_pipeline
 
 
@@ -24,6 +26,64 @@ def _default_phase2_jsonl_path() -> Path:
     if not candidates:
         raise FileNotFoundError("No Phase 2 JSONL found under data/phase2/collected_*.jsonl")
     return candidates[0]
+
+
+def _collect_phase2_jsonl_best_effort(*, out_dir: Path, max_reviews: int) -> Optional[Path]:
+    """Best-effort remote collection fallback for API runs.
+
+    Returns a combined JSONL path when at least one source is configured and produced rows;
+    otherwise returns None so caller can surface a clear 400 error.
+    """
+    settings = get_settings()
+    sources: list[str] = []
+    if settings.app_store_app_id:
+        sources.append("app_store")
+    if settings.google_play_package:
+        sources.append("google_play")
+    if not sources:
+        return None
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    tmp_dir = out_dir / "phase2_collect"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    out_path = tmp_dir / f"combined_{ts}.jsonl"
+
+    per_source = max(1, max_reviews // len(sources))
+    remainder = max_reviews - (per_source * len(sources))
+    rows: list[dict] = []
+
+    if "app_store" in sources:
+        target = per_source + (1 if remainder > 0 else 0)
+        remainder -= 1
+        collected = collect_app_store_until_target(
+            settings.app_store_app_id,
+            "us",
+            settings,
+            target,
+            apply_phase3=True,
+        )
+        rows.extend([r.model_dump(mode="json", by_alias=True) for r in collected])
+
+    if "google_play" in sources:
+        target = per_source + (1 if remainder > 0 else 0)
+        remainder -= 1
+        collected = collect_google_play_until_target(
+            settings.google_play_package,
+            settings,
+            target,
+            apply_phase3=True,
+            lang="en",
+            country="us",
+        )
+        rows.extend([r.model_dump(mode="json", by_alias=True) for r in collected])
+
+    if not rows:
+        return None
+
+    with out_path.open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, default=str) + "\n")
+    return out_path
 
 
 class WeeklyRunRequest(BaseModel):
@@ -83,10 +143,21 @@ def create_app(*, api_base_dir: Path | None = None) -> FastAPI:
 
     @app.post("/runs/weekly", response_model=WeeklyRunResponse)
     def post_weekly_run(req: WeeklyRunRequest, background_tasks: BackgroundTasks) -> WeeklyRunResponse:
-        try:
-            phase2_path = req.phase2_jsonl_path or _default_phase2_jsonl_path()
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+        phase2_path: Optional[Path] = req.phase2_jsonl_path
+        if phase2_path is None:
+            try:
+                phase2_path = _default_phase2_jsonl_path()
+            except Exception:
+                phase2_path = _collect_phase2_jsonl_best_effort(out_dir=out_dir, max_reviews=req.max_reviews)
+                if phase2_path is None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "No Phase 2 JSONL found under data/phase2/collected_*.jsonl and remote collection "
+                            "is not configured/returned no rows. Set REVIEW_PULSE_APP_STORE_APP_ID and/or "
+                            "REVIEW_PULSE_GOOGLE_PLAY_PACKAGE, or pass phase2JsonlPath."
+                        ),
+                    )
 
         run_id = tracker.create_run(week_bucket=req.week_bucket, trigger_type=req.trigger_type)
 
