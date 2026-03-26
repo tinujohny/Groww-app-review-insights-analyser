@@ -116,15 +116,14 @@ For provider auth, set `REVIEW_PULSE_EMAIL_USERNAME` and `REVIEW_PULSE_EMAIL_PAS
 
 ## Deploy: Backend on Railway, Frontend on Vercel
 
-### Railway (backend / FastAPI)
+### Railway (backend / FastAPI via Docker)
 
-This repo includes a `Procfile`:
+This repo supports Railway Docker deploy using:
 
-```text
-web: review-pulse-api
-```
+- `Dockerfile`
+- `railway.toml` (`builder = "DOCKERFILE"`)
 
-So Railway can run the backend without extra start-command setup.
+Railway will build and run `review-pulse-api` from the container. The API reads `PORT` automatically.
 
 Set these Railway environment variables:
 
@@ -140,6 +139,7 @@ Notes:
 
 - Server binds to `0.0.0.0` and uses `PORT` automatically (Railway compatible).
 - `REVIEW_PULSE_CORS_ORIGINS` accepts either `*` or a comma-separated list of origins.
+- Keep secrets only in Railway Variables (do not commit `.env`).
 
 ### Vercel (frontend / Next.js)
 
