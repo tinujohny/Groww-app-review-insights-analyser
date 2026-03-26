@@ -10,7 +10,7 @@ import uvicorn
 from phase7.api import create_app
 
 
-def main(*, host: str = "127.0.0.1", port: int | None = None) -> None:
+def main(*, host: str = "0.0.0.0", port: int | None = None) -> None:
     if port is None:
         port = int(os.environ.get("PORT", "8000"))
     uvicorn.run(
@@ -23,6 +23,6 @@ def main(*, host: str = "127.0.0.1", port: int | None = None) -> None:
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
-    host = os.environ.get("HOST", "127.0.0.1")
+    host = os.environ.get("HOST", "0.0.0.0")
     main(host=host, port=port)
 

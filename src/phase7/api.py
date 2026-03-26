@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -61,6 +63,18 @@ class BackfillRequest(BaseModel):
 
 def create_app(*, api_base_dir: Path | None = None) -> FastAPI:
     app = FastAPI(title="ReviewPulse API (Phase 7)")
+    cors_origins_raw = os.environ.get("REVIEW_PULSE_CORS_ORIGINS", "*")
+    if cors_origins_raw.strip() == "*":
+        allow_origins = ["*"]
+    else:
+        allow_origins = [x.strip() for x in cors_origins_raw.split(",") if x.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins or ["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     out_dir = api_base_dir or Path("data/phase7")
     tracker = FileRunTracker(out_dir)
 

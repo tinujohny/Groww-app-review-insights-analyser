@@ -113,3 +113,40 @@ npm run dev
 
 Configure `NEXT_PUBLIC_API_BASE_URL` (default is `http://127.0.0.1:8000`).
 For provider auth, set `REVIEW_PULSE_EMAIL_USERNAME` and `REVIEW_PULSE_EMAIL_PASSWORD` in `.env` (plus `REVIEW_PULSE_EMAIL_PROVIDER`).
+
+## Deploy: Backend on Railway, Frontend on Vercel
+
+### Railway (backend / FastAPI)
+
+This repo includes a `Procfile`:
+
+```text
+web: review-pulse-api
+```
+
+So Railway can run the backend without extra start-command setup.
+
+Set these Railway environment variables:
+
+- `REVIEW_PULSE_GROQ_API_KEY`
+- `REVIEW_PULSE_GEMINI_API_KEY`
+- `REVIEW_PULSE_GEMINI_MODEL=gemini-2.5-flash`
+- `REVIEW_PULSE_EMAIL_PROVIDER=gmail`
+- `REVIEW_PULSE_EMAIL_USERNAME`
+- `REVIEW_PULSE_EMAIL_PASSWORD`
+- `REVIEW_PULSE_CORS_ORIGINS=https://<your-vercel-app>.vercel.app`
+
+Notes:
+
+- Server binds to `0.0.0.0` and uses `PORT` automatically (Railway compatible).
+- `REVIEW_PULSE_CORS_ORIGINS` accepts either `*` or a comma-separated list of origins.
+
+### Vercel (frontend / Next.js)
+
+Deploy from `webui/` as the project root (or set Vercel "Root Directory" = `webui`).
+
+Set frontend env var in Vercel:
+
+- `NEXT_PUBLIC_API_BASE_URL=https://<your-railway-backend>.up.railway.app`
+
+Then redeploy the frontend so browser calls go to Railway backend.
