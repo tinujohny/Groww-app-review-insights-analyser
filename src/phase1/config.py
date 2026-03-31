@@ -171,6 +171,12 @@ class AppSettings(BaseSettings):
             "Maximum allowed runtime for a single Phase 7 run before it is marked failed as stale."
         ),
     )
+    allow_week_fallback: bool = Field(
+        default=False,
+        description=(
+            "If True and requested week has no rows, Phase 7 may fallback to latest available week."
+        ),
+    )
 
 
 @lru_cache

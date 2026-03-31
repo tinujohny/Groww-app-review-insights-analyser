@@ -155,6 +155,11 @@ def run_weekly_pipeline(
         phase2_rows = load_review_dicts(phase2_jsonl_path)
         week_rows = filter_phase2_rows_for_week(phase2_rows, week_bucket)
         if not week_rows:
+            if not settings.allow_week_fallback:
+                raise RuntimeError(
+                    f"No Phase 2 reviews found for requested week {week_bucket}. "
+                    "Pick a week with data or enable REVIEW_PULSE_ALLOW_WEEK_FALLBACK."
+                )
             latest_week = _latest_available_week(phase2_rows)
             if not latest_week:
                 raise RuntimeError(
@@ -286,6 +291,11 @@ def run_weekly_pipeline(
                     + "\n",
                     encoding="utf-8",
                 )
+                tracker_payload["phaseStatus"]["phase6_warning"] = {
+                    "status": "warn",
+                    "reason": "smtp_send_failed_fallback_local",
+                    "detail": str(exc),
+                }
         else:
             res = create_draft_with_settings(
                 settings,

@@ -1,6 +1,6 @@
 import Head from "next/head";
 import { useEffect, useMemo, useState } from "react";
-import { eightWeeksEndingAt } from "../lib/isoWeek";
+import { dateToIsoWeek, eightWeeksEndingAt, formatIsoWeek } from "../lib/isoWeek";
 
 type RunStatus = {
   runId: string;
@@ -109,7 +109,12 @@ function downloadText(filename: string, body: string) {
 }
 
 export default function Home() {
-  const [weekBucket, setWeekBucket] = useState("2026-W12");
+  const initialWeek = useMemo(() => {
+    const iso = dateToIsoWeek(new Date());
+    return formatIsoWeek(iso.y, iso.w);
+  }, []);
+  const [windowEndWeek] = useState(initialWeek);
+  const [weekBucket, setWeekBucket] = useState(initialWeek);
   const [recipientEmail, setRecipientEmail] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [sendNow, setSendNow] = useState(false);
@@ -118,6 +123,7 @@ export default function Home() {
   const [runWeek, setRunWeek] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("idle");
   const [lastError, setLastError] = useState<string | null>(null);
+  const [lastWarning, setLastWarning] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<WeeklyReport | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -132,6 +138,22 @@ export default function Home() {
         const data = (await res.json()) as RunStatus;
         setStatus(data.status);
         setLastError(data.error || null);
+        const phase6Warning =
+          data.phaseStatus &&
+          typeof data.phaseStatus === "object" &&
+          data.phaseStatus["phase6_warning"] &&
+          typeof data.phaseStatus["phase6_warning"] === "object"
+            ? (data.phaseStatus["phase6_warning"] as Record<string, unknown>)
+            : null;
+        const warningDetail =
+          phase6Warning && typeof phase6Warning.detail === "string"
+            ? phase6Warning.detail
+            : null;
+        setLastWarning(
+          warningDetail
+            ? `Immediate send failed on provider network; local draft fallback created. (${warningDetail})`
+            : null,
+        );
         if (data.status === "succeeded" || data.status === "failed") {
           clearInterval(t);
         }
@@ -183,6 +205,7 @@ export default function Home() {
     setRunWeek(weekBucket);
     setStatus("starting");
     setLastError(null);
+    setLastWarning(null);
     setReport(null);
     setReportError(null);
     setBusy(true);
@@ -193,9 +216,9 @@ export default function Home() {
       recipientEmail: recipientEmail || null,
       recipientName: recipientName || null,
       sendNow,
-      chunked: false,
-      maxReviews: 500,
-      maxChars: 80000,
+      chunked: true,
+      maxReviews: 200,
+      maxChars: 30000,
     };
 
     try {
@@ -222,7 +245,7 @@ export default function Home() {
   }
 
   const hasPulse = Boolean(report && status === "succeeded");
-  const weekStrip = useMemo(() => eightWeeksEndingAt(weekBucket), [weekBucket]);
+  const weekStrip = useMemo(() => eightWeeksEndingAt(windowEndWeek), [windowEndWeek]);
 
   const sortedThemes = useMemo(() => {
     const t = report?.topThemes ?? [];
@@ -379,6 +402,7 @@ export default function Home() {
               </label>
             </div>
             {lastError ? <div className="ra-email-error">{lastError}</div> : null}
+            {lastWarning ? <div className="ra-email-error">{lastWarning}</div> : null}
             {reportError ? <div className="ra-email-error">{reportError}</div> : null}
           </section>
 
@@ -399,7 +423,7 @@ export default function Home() {
             </div>
             <p className="gw-chart-caption">
               Review volume over time — Current: 8 week window ending{" "}
-              <strong style={{ color: "#cbd5e1" }}>{weekBucket}</strong> (W8 = selected week).
+              <strong style={{ color: "#cbd5e1" }}>{windowEndWeek}</strong> (W8 = latest week in window).
             </p>
           </section>
 

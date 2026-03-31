@@ -147,9 +147,9 @@ class WeeklyRunRequest(BaseModel):
         description="Recipient name for personalized greeting (frontend-provided)",
     )
     send_now: bool = Field(default=False, alias="sendNow", description="If true, send email immediately (gmail only in MVP)")
-    max_reviews: int = Field(default=500, alias="maxReviews", ge=1, le=50_000)
-    max_chars: int = Field(default=80_000, alias="maxChars", ge=1)
-    chunked: bool = Field(default=False, alias="chunked")
+    max_reviews: int = Field(default=200, alias="maxReviews", ge=1, le=50_000)
+    max_chars: int = Field(default=30_000, alias="maxChars", ge=1)
+    chunked: bool = Field(default=True, alias="chunked")
 
 
 class WeeklyRunResponse(BaseModel):
