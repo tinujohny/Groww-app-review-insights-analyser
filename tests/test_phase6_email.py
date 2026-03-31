@@ -5,7 +5,7 @@ from __future__ import annotations
 from phase1.config import AppSettings
 import phase6.email_draft as email_draft
 from phase6.email_draft import compose_body_text, compose_subject, create_draft_with_settings
-from phase6.phase6_run import _resolve_recipient, _resolve_recipient_name
+from phase6.phase6 import _resolve_recipient, _resolve_recipient_name
 
 
 def test_subject_format():
@@ -34,6 +34,21 @@ def test_body_has_personalized_greeting():
     }
     body = compose_body_text(p)
     assert body.startswith("Hi Aisha,")
+
+
+def test_body_includes_fee_explanation_block():
+    p = {
+        "week": "2026-W12",
+        "noteText": "Pulse body",
+        "topThemes": [{"name": "x", "reviewCount": 1}],
+        "fee_scenario": "Mutual Fund Exit Load",
+        "explanation_bullets": ["Bullet 1", "Bullet 2", "Bullet 3"],
+        "source_links": ["https://groww.in/mutual-funds/amc"],
+    }
+    body = compose_body_text(p)
+    assert "Fee Explanation: Mutual Fund Exit Load" in body
+    assert "- Bullet 1" in body
+    assert "Source links:" in body
 
 
 def test_provider_none_creates_local_draft(tmp_path):

@@ -222,6 +222,8 @@ policyGate --> observability[RunLogsMetricsAudit]
 ### Tasks
 
 - Build templated email body (plain text + optional HTML)
+- Add a fee-explanation block in email for a configured scenario (initial scenario: **Mutual Fund Exit Load**)
+- Include three concise explanation bullets and source links in the email body
 - Subject format:
   - `Groww Weekly Review Pulse - YYYY-WW`
 - Create draft in mailbox (self/alias)
@@ -245,6 +247,16 @@ policyGate --> observability[RunLogsMetricsAudit]
   - `email_provider=gmail`: creates Gmail drafts via IMAP using `REVIEW_PULSE_EMAIL_USERNAME` + `REVIEW_PULSE_EMAIL_PASSWORD`.
   - `email_provider=sendgrid`: currently creates a local draft artifact (end-to-end supported); real SendGrid API send is out of scope for this MVP.
 - Failure path persists output (`status=failed`) and appends retry metadata to `data/phase6/retry_queue.jsonl`.
+
+### Fee explanation enrichment (new)
+
+- Add a reusable section in mail body:
+  - `Fee Explanation: Mutual Fund Exit Load`
+  - `Bullet 1`
+  - `Bullet 2`
+  - `Bullet 3`
+- Source the fee details from approved public pages and include links in the mail footer section (example source: Groww AMC/help content).
+- Persist the selected fee scenario, bullets, and source links along with weekly artifacts for auditability.
 
 ## Phase 7 - Scheduling, Monitoring, and Operations
 
@@ -348,10 +360,12 @@ Responsibilities:
 
 - Create email draft to self/alias
 - Idempotent retries for transient failure
+- Append fee explanation scenario block (title + 3 bullets + source links) when configured
 
 Interfaces:
 
 - `createDraft(to, subject, bodyText, bodyHtml)`
+- `buildFeeExplanation(scenario, sourceLinks) -> { fee_scenario, explanation_bullets, source_links, last_checked }`
 
 ## F) Web Dashboard (UI)
 
@@ -360,6 +374,7 @@ Responsibilities:
 - Let authenticated users pick a week (or “current week”) and **Generate one-pager**: run ingestion through policy gate and persist `weekly_reports`
 - **Send draft email** (or “Create mailbox draft”): call `EmailDraftService` with the generated note; show success/failure and link to run status
 - Display last run status, report preview, and word count; optional download/export of the one-pager (PDF/Markdown) if needed
+- Display fee explanation block preview included in outgoing email (scenario + bullets + links)
 
 Interfaces:
 
@@ -373,10 +388,25 @@ Responsibilities:
 - Enforce no-PII output
 - Enforce max words and max themes
 - Block publish/draft on violation
+- Validate fee explanation section exists when fee scenario is enabled
+- Validate explanation bullets are sourced (at least one trusted source link present)
 
 Interfaces:
 
 - `validateArtifact(type, content)`
+
+## H) Google Docs Append Service (MCP)
+
+Responsibilities:
+
+- Build a combined JSON payload containing weekly pulse + fee explanation
+- Append the payload to a Google Doc using MCP
+- Persist append status and Google Doc metadata for replay/audit
+
+Interfaces:
+
+- `appendWeeklyJsonToGoogleDoc(docId, payloadJson)`
+- `getLastGoogleDocAppendStatus(runId)`
 
 ## 6) Data Model (Suggested)
 
@@ -450,6 +480,26 @@ Interfaces:
 - `started_at`
 - `ended_at`
 
+## `fee_explanations`
+
+- `id` (UUID, PK)
+- `week_bucket`
+- `scenario` (e.g., `Mutual Fund Exit Load`)
+- `explanation_bullets_json`
+- `source_links_json`
+- `last_checked`
+- `created_at`
+
+## `google_doc_appends`
+
+- `id` (UUID, PK)
+- `run_id` (FK -> pipeline_runs.run_id)
+- `doc_id`
+- `payload_json`
+- `append_status` (`pending`/`appended`/`failed`)
+- `append_error` (nullable)
+- `appended_at`
+
 ## 7) APIs and Contracts
 
 ## External API (used by Web UI and CLI)
@@ -461,6 +511,7 @@ The Web UI and CLI are thin clients over the same API. Request body or headers s
 - `GET /reports/weekly?week=YYYY-WW` — fetch generated one-pager for display/export in the UI
 - `GET /runs/{runId}` — poll progress for long runs (UI progress indicator)
 - Optional explicit step: `POST /runs/{runId}/email` — create mailbox draft from an already-succeeded run (if product wants “generate first, send draft second” in the UI)
+- Optional explicit step: `POST /runs/{runId}/google-doc-append` — append combined JSON payload to Google Doc via MCP
 
 ## Internal response schema examples
 
@@ -499,6 +550,36 @@ The Web UI and CLI are thin clients over the same API. Request body or headers s
   ],
   "wordCount": 112
 }
+```
+
+### Combined JSON payload for Google Doc append (new)
+
+```json
+{
+  "date": "2026-03-15",
+  "weekly_pulse": {
+    "themes": ["Theme 1", "Theme 2", "Theme 3"],
+    "quotes": ["Quote 1", "Quote 2", "Quote 3"],
+    "action_ideas": ["Action 1", "Action 2", "Action 3"]
+  },
+  "fee_scenario": "Mutual Fund Exit Load",
+  "explanation_bullets": [
+    "Fact 1...",
+    "Fact 2...",
+    "Fact 3..."
+  ],
+  "source_links": ["Link 1", "Link 2"],
+  "last_checked": "2026-03-15"
+}
+```
+
+### Mail section format (new)
+
+```text
+Fee Explanation: Mutual Fund Exit Load
+- Bullet 1
+- Bullet 2
+- Bullet 3
 ```
 
 ## 8) Groq Integration Design
@@ -639,6 +720,120 @@ project/
     architecture/
   configs/
 ```
+
+## 16) Execution Rollout Plan (Fee Scenario + Google Doc MCP)
+
+This rollout adds:
+1) fee explanation enrichment (`Mutual Fund Exit Load`) in mail, and  
+2) combined JSON append to Google Doc via MCP.
+
+### Phase 16.1 - Fee scenario content pipeline
+
+**Owner:** Backend + Content/Research  
+**Goal:** reliably produce 3 factual bullets + source links for the configured fee scenario.
+
+Tasks:
+- Add a fee-scenario config contract:
+  - `fee_scenario` (default: `Mutual Fund Exit Load`)
+  - `fee_sources` (allowlist of approved domains/pages)
+- Implement `buildFeeExplanation(scenario, sourceLinks)` service to output:
+  - `fee_scenario`
+  - `explanation_bullets` (exactly 3 short bullets)
+  - `source_links` (>=1)
+  - `last_checked` (UTC date)
+- Add fallback behavior:
+  - if source fetch fails, keep weekly pulse generation successful
+  - mark fee block status as degraded and include retry metadata
+- Persist fee explanation artifact under run output and in `fee_explanations`.
+
+Acceptance criteria:
+- For a run with fee scenario enabled, output contains exactly 3 bullets and >=1 source link.
+- Bullets are non-empty, non-duplicate, and scenario-specific.
+- Failed fetch does not break weekly pulse generation; failure is visible in run status metadata.
+
+### Phase 16.2 - Email template enrichment
+
+**Owner:** Backend (Email Service)  
+**Goal:** append fee explanation block to outgoing mail body (text + HTML).
+
+Tasks:
+- Update mail composition to include:
+  - `Fee Explanation: Mutual Fund Exit Load`
+  - bullet list (3 items)
+  - source links section
+- Ensure personalization and existing metadata footer remain intact.
+- Add policy check in email pre-send validation:
+  - when `fee_scenario` enabled, fee block must exist and be non-empty.
+
+Acceptance criteria:
+- Draft email includes fee section in both text and HTML representations.
+- Existing weekly pulse content and footer still render correctly.
+- `sendNow=false` and `sendNow=true` paths both include fee section.
+
+### Phase 16.3 - Combined JSON contract + run output
+
+**Owner:** Backend API  
+**Goal:** generate and persist the exact combined payload contract.
+
+Tasks:
+- Build `combined_payload.json` per run with schema:
+  - `date`
+  - `weekly_pulse` (`themes`, `quotes`, `action_ideas`)
+  - `fee_scenario`
+  - `explanation_bullets`
+  - `source_links`
+  - `last_checked`
+- Ensure keys are stable and backward-compatible for downstream consumers.
+- Store payload in run directory and optionally in `google_doc_appends.payload_json`.
+
+Acceptance criteria:
+- Payload keys and value types match documented JSON contract exactly.
+- Payload is available immediately after successful run completion.
+- Quotes/actions in payload map to Phase 5 output for the same run/week.
+
+### Phase 16.4 - Google Doc append via MCP
+
+**Owner:** Backend Integrations  
+**Goal:** append combined JSON to a target Google Doc and track append status.
+
+Tasks:
+- Implement MCP client adapter:
+  - `appendWeeklyJsonToGoogleDoc(docId, payloadJson)`
+- Add API endpoint:
+  - `POST /runs/{runId}/google-doc-append`
+- Store append audit:
+  - `doc_id`, `append_status`, `append_error`, `appended_at`
+- Add idempotency guard (avoid duplicate appends for same `runId` + `docId` unless forced).
+
+Acceptance criteria:
+- Successful API call appends JSON to doc and returns append metadata.
+- Repeated call with same `runId` + `docId` is idempotent by default.
+- Failure path returns actionable error and persists audit row with `failed` status.
+
+### Phase 16.5 - QA, observability, and go-live
+
+**Owner:** QA + Backend  
+**Goal:** production-ready rollout with monitoring and rollback.
+
+Tasks:
+- Unit tests:
+  - fee bullet generation/validation
+  - email fee section rendering (text/html)
+  - combined JSON schema validation
+  - MCP adapter response/error handling
+- Integration tests:
+  - end-to-end run with fee scenario + google-doc append
+- Metrics/logging:
+  - fee block generation success rate
+  - doc append success rate and latency
+- Feature flags:
+  - `ENABLE_FEE_EXPLANATION`
+  - `ENABLE_GOOGLE_DOC_APPEND`
+
+Acceptance criteria:
+- CI passes all new tests.
+- Staging run produces valid mail + valid combined JSON + successful doc append.
+- Rollback path verified by disabling feature flags without impacting baseline weekly pulse flow.
 
 ---
 

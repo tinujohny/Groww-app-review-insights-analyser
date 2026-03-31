@@ -10,22 +10,12 @@ from typing import Any, Dict, List, Optional
 
 from phase1.config import get_settings
 from phase4.groq_theme_run import (
-    ASSIGN_SYSTEM,
-    MERGE_SYSTEM,
-    THEME_SYSTEM,
     run_review_assignment_with_fallback,
     run_theme_extraction_with_fallback,
     run_themes_merge_with_fallback,
 )
 from phase4.jsonl_reviews import load_review_dicts, reviews_to_corpus_chunks, reviews_to_corpus_text
 from phase4.validation import validate_assignment_payload, validate_themes_payload
-
-
-def _retry_hint(system_prompt: str) -> str:
-    return (
-        f"{system_prompt}\n"
-        "The previous response failed schema validation. Return only JSON in the exact shape requested."
-    )
 
 
 def _prepare_assignment_reviews(rows: List[Dict[str, Any]], max_reviews: int) -> List[Dict[str, str]]:
@@ -50,33 +40,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             "to Groq using REVIEW_PULSE_GROQ_API_KEY; if Groq is exhausted, fallback to Gemini when configured."
         ),
     )
-    parser.add_argument(
-        "--input",
-        "-i",
-        type=Path,
-        required=True,
-        help="Path to JSONL from review-pulse-collect or phase2 ingest",
-    )
-    parser.add_argument(
-        "--out",
-        "-o",
-        type=Path,
-        default=None,
-        help="Write LLM JSON output (default: data/phase4/themes_<timestamp>.json)",
-    )
+    parser.add_argument("--input", "-i", type=Path, required=True, help="Path to JSONL from review-pulse-collect or phase2 ingest")
+    parser.add_argument("--out", "-o", type=Path, default=None, help="Write LLM JSON output (default: data/phase4/themes_<timestamp>.json)")
     parser.add_argument("--max-chars", type=int, default=80_000, help="Max corpus chars per Groq request")
     parser.add_argument("--max-reviews", type=int, default=500, help="Max review rows to include total")
     parser.add_argument("--max-retries", type=int, default=1, help="Schema retry count per LLM step")
-    parser.add_argument(
-        "--chunked",
-        action="store_true",
-        help="Split reviews into multiple requests (each up to --max-chars); merge themes with a final LLM call",
-    )
-    parser.add_argument(
-        "--no-merge",
-        action="store_true",
-        help="With --chunked: only run per-chunk theme extraction; skip merge (you get one theme list per chunk)",
-    )
+    parser.add_argument("--chunked", action="store_true", help="Split reviews into multiple requests (each up to --max-chars); merge themes with a final LLM call")
+    parser.add_argument("--no-merge", action="store_true", help="With --chunked: only run per-chunk theme extraction; skip merge")
     args = parser.parse_args(argv)
 
     get_settings.cache_clear()
@@ -97,7 +67,6 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         out_path = Path(f"data/phase4/themes_{ts}.json")
-
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     payload: Dict[str, Any] = {
@@ -110,22 +79,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     }
 
     if args.chunked:
-        chunks = reviews_to_corpus_chunks(
-            rows,
-            max_chars_per_chunk=args.max_chars,
-            max_reviews=args.max_reviews,
-        )
+        chunks = reviews_to_corpus_chunks(rows, max_chars_per_chunk=args.max_chars, max_reviews=args.max_reviews)
         if not chunks:
             print("Error: no review text in input", file=sys.stderr)
             return 2
-
         batches: List[Dict[str, Any]] = []
         candidate_lists: List[Dict[str, Any]] = []
         for i, corpus in enumerate(chunks):
             parsed: Optional[Dict[str, Any]] = None
             provider = "groq"
             raw = ""
-            for attempt in range(args.max_retries + 1):
+            for _attempt in range(args.max_retries + 1):
                 raw, provider = run_theme_extraction_with_fallback(
                     corpus,
                     groq_api_key=groq_key,
@@ -140,27 +104,18 @@ def main(argv: Optional[List[str]] = None) -> int:
                 parsed = validate_themes_payload(parsed_obj)
                 if parsed:
                     break
-            batches.append(
-                {
-                    "batch_index": i,
-                    "corpus_chars": len(corpus),
-                    "provider": provider,
-                    "raw_response": raw,
-                    "parsed": parsed,
-                }
-            )
+            batches.append({"batch_index": i, "corpus_chars": len(corpus), "provider": provider, "raw_response": raw, "parsed": parsed})
             if parsed and isinstance(parsed.get("themes"), list):
                 candidate_lists.append(parsed)
 
         payload["batches"] = batches
         payload["chunk_count"] = len(chunks)
-
         do_merge = not args.no_merge and len(candidate_lists) > 1
         if do_merge:
             merge_raw = ""
             merge_provider = "groq"
             merge_parsed: Optional[Dict[str, Any]] = None
-            for attempt in range(args.max_retries + 1):
+            for _attempt in range(args.max_retries + 1):
                 merge_raw, merge_provider = run_themes_merge_with_fallback(
                     candidate_lists,
                     groq_api_key=groq_key,
@@ -190,27 +145,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             payload["raw_response"] = None
             payload["parsed"] = None
             payload["corpus_chars"] = sum(b["corpus_chars"] for b in batches)
-            if args.no_merge:
-                pass
-            else:
-                print(
-                    "Note: merge skipped (need 2+ successful batch parses); see batches[].parsed",
-                    file=sys.stderr,
-                )
     else:
-        corpus = reviews_to_corpus_text(
-            rows,
-            max_chars=args.max_chars,
-            max_reviews=args.max_reviews,
-        )
+        corpus = reviews_to_corpus_text(rows, max_chars=args.max_chars, max_reviews=args.max_reviews)
         if not corpus.strip():
             print("Error: no review text in input", file=sys.stderr)
             return 2
-
         raw = ""
         provider = "groq"
         parsed: Optional[Dict[str, Any]] = None
-        for attempt in range(args.max_retries + 1):
+        for _attempt in range(args.max_retries + 1):
             raw, provider = run_theme_extraction_with_fallback(
                 corpus,
                 groq_api_key=groq_key,
@@ -237,7 +180,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             assign_raw = ""
             assign_provider = "groq"
             assign_parsed: Optional[Dict[str, Any]] = None
-            for attempt in range(args.max_retries + 1):
+            for _attempt in range(args.max_retries + 1):
                 assign_raw, assign_provider = run_review_assignment_with_fallback(
                     assignment_reviews,
                     themes_payload,
@@ -259,9 +202,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             payload["themes"] = themes_payload.get("themes", [])
             if not payload["review_theme_map"]:
                 raise RuntimeError(
-                    "Phase 4 assignment (Prompt C) produced an empty review_theme_map. "
-                    "This usually means Groq/Gemini response was truncated or invalid JSON. "
-                    "Reduce --max-reviews or increase LLM response budget."
+                    "Phase 4 assignment produced an empty review_theme_map. Reduce --max-reviews or increase LLM response budget."
                 )
 
     out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

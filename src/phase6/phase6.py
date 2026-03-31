@@ -31,7 +31,6 @@ def _append_retry_job(retry_queue_path: Path, payload: Dict[str, Any]) -> None:
 
 
 def _resolve_recipient(args_to: Optional[str], phase5_payload: Dict[str, Any], settings_default: Optional[str]) -> Optional[str]:
-    # Frontend path: request can pass recipient in payload or explicit CLI flag.
     from_payload = phase5_payload.get("recipientEmail")
     candidate = args_to or (str(from_payload).strip() if from_payload else None) or settings_default
     if not candidate:
@@ -59,30 +58,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
     )
     parser.add_argument("--phase5", type=Path, required=True, help="Path to Phase 5 weekly pulse JSON")
-    parser.add_argument(
-        "--to-email",
-        type=str,
-        default=None,
-        help="Recipient email (frontend/runtime supplied). Falls back to phase5.recipientEmail or REVIEW_PULSE_EMAIL_DRAFT_TO.",
-    )
-    parser.add_argument(
-        "--recipient-name",
-        type=str,
-        default=None,
-        help="Recipient name for personalized greeting (e.g. 'Hi Priya,'). Falls back to phase5.recipientName.",
-    )
+    parser.add_argument("--to-email", type=str, default=None)
+    parser.add_argument("--recipient-name", type=str, default=None)
     parser.add_argument("--out", "-o", type=Path, default=None, help="Output JSON path")
-    parser.add_argument(
-        "--retry-queue",
-        type=Path,
-        default=Path("data/phase6/retry_queue.jsonl"),
-        help="Where to append retry jobs on draft failures",
-    )
-    parser.add_argument(
-        "--send-now",
-        action="store_true",
-        help="Send immediately via provider (gmail supported); otherwise create draft only.",
-    )
+    parser.add_argument("--retry-queue", type=Path, default=Path("data/phase6/retry_queue.jsonl"))
+    parser.add_argument("--send-now", action="store_true", help="Send immediately via provider (gmail supported)")
     args = parser.parse_args(argv)
 
     if not args.phase5.is_file():
@@ -133,13 +113,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 body_text=body_text,
                 body_html=body_html,
             )
-            base.update(
-                {
-                    "status": "sent_provider",
-                    "send_provider_id": send_id,
-                    "retry_enqueued": False,
-                }
-            )
+            base.update({"status": "sent_provider", "send_provider_id": send_id, "retry_enqueued": False})
         else:
             res = create_draft_with_settings(
                 settings,
@@ -149,24 +123,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                 local_store_dir=Path("data/phase6/provider_none_drafts"),
                 recipient_email=recipient_email,
             )
-            base.update(
-                {
-                    "status": res.status,
-                    "draft_provider_id": res.draft_provider_id,
-                    "retry_enqueued": False,
-                }
-            )
+            base.update({"status": res.status, "draft_provider_id": res.draft_provider_id, "retry_enqueued": False})
         out_path.write_text(json.dumps(base, indent=2) + "\n", encoding="utf-8")
         print(f"Wrote {out_path.resolve()}")
         return 0
     except Exception as exc:  # noqa: BLE001
-        base.update(
-            {
-                "status": "failed",
-                "error": str(exc),
-                "retry_enqueued": True,
-            }
-        )
+        base.update({"status": "failed", "error": str(exc), "retry_enqueued": True})
         out_path.write_text(json.dumps(base, indent=2) + "\n", encoding="utf-8")
         _append_retry_job(
             args.retry_queue,

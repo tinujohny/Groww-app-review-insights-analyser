@@ -151,7 +151,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--send-now", action="store_true", default=False, help="Send email now (gmail only in MVP)")
     parser.add_argument("--chunked", action="store_true", help="Use chunked theme extraction")
     parser.add_argument("--max-reviews", type=int, default=1000, help="Max total reviews to download")
-    parser.add_argument("--weeks-back", type=int, default=8, help="Generate pulse for last N weeks")
+    parser.add_argument(
+        "--weeks-back",
+        type=int,
+        default=12,
+        help="Generate pulse for last N weeks (stakeholder window is often 8–12; default 12)",
+    )
     parser.add_argument("--max-chars", type=int, default=80_000)
     parser.add_argument("--output-dir", type=str, default="data/phase7", help="Output dir (runs/phase artifacts)")
     parser.add_argument("--run-once", action="store_true", help="Run one weekly pulse immediately and exit")

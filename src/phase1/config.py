@@ -123,6 +123,47 @@ class AppSettings(BaseSettings):
         description="Android applicationId / package name for Play Store review collection.",
     )
 
+    disable_remote_collect: bool = Field(
+        default=False,
+        description=(
+            "If True, Phase 7 API will not fall back to App Store RSS / Play scraping when no local "
+            "Phase 2 JSONL exists (CSV-ingest-only / compliance mode)."
+        ),
+    )
+    enable_fee_explanation: bool = Field(
+        default=True,
+        description="If True, include fee explanation scenario block in Phase 6 mail output.",
+    )
+    fee_scenario: str = Field(
+        default="Mutual Fund Exit Load",
+        description="Fee explanation scenario label appended to weekly mail.",
+    )
+    fee_source_links: str = Field(
+        default="https://groww.in/mutual-funds/amc",
+        description="Comma-separated reference URLs used for fee explanation context.",
+    )
+    enable_google_doc_append: bool = Field(
+        default=True,
+        description="If True, allow Phase 7 endpoint to append combined JSON payload to Google doc via MCP adapter.",
+    )
+    google_doc_default_id: Optional[str] = Field(
+        default=None,
+        description="Default Google doc id for combined JSON append endpoint when caller omits docId.",
+    )
+    google_mcp_append_command: Optional[str] = Field(
+        default=None,
+        description=(
+            "Command template to append combined JSON to Google Doc via MCP. "
+            "Supports placeholders: {doc_id} and {payload_path}."
+        ),
+    )
+    google_mcp_timeout_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=300,
+        description="Timeout for the MCP append command execution.",
+    )
+
 
 @lru_cache
 def get_settings() -> AppSettings:

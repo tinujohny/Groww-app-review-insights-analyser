@@ -1,4 +1,4 @@
-from phase1.phase1_run import phase1_manifest_dict
+from phase1.phase1 import phase1_manifest_dict
 
 
 def test_phase1_manifest_shape():

@@ -11,10 +11,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from phase1.config import AppSettings, get_settings
+from phase6.fee_explanation import build_fee_explanation, parse_source_links
 from phase4.jsonl_reviews import load_review_dicts
-from phase4.phase4_run import main as phase4_main
+from phase4.phase4 import main as phase4_main
 from phase5.compose import build_weekly_pulse
-from phase5.phase5_run import main as phase5_main
+from phase5.phase5 import main as phase5_main
 from phase6.email_draft import (
     compose_body_html,
     compose_body_text,
@@ -69,6 +70,7 @@ class PipelineResult:
     phase5_out: Optional[str]
     phase6_out: Optional[str]
     report_out: Optional[str]
+    combined_out: Optional[str]
 
 
 class FileRunTracker:
@@ -129,6 +131,7 @@ def run_weekly_pipeline(
     phase5_out = run_dir / "phase5.json"
     phase6_out = run_dir / "phase6.json"
     report_out = output_dir / "reports" / f"weekly_{week_bucket}.json"
+    combined_out = run_dir / "combined_payload.json"
 
     tracker_payload = tracker.get_run(run_id) or {}
     tracker_payload["phaseStatus"] = tracker_payload.get("phaseStatus") or {}
@@ -179,6 +182,12 @@ def run_weekly_pipeline(
         phase5_payload_for_email = dict(phase5_payload)
         if recipient_name:
             phase5_payload_for_email["recipientName"] = recipient_name
+        if settings.enable_fee_explanation:
+            fee_payload = build_fee_explanation(
+                scenario=settings.fee_scenario,
+                source_links=parse_source_links(settings.fee_source_links),
+            )
+            phase5_payload_for_email.update(fee_payload)
 
         subject = compose_subject(week_bucket)
         body_text = compose_body_text(phase5_payload_for_email)
@@ -243,6 +252,23 @@ def run_weekly_pipeline(
             )
 
         tracker_payload["phaseStatus"]["phase6"] = {"status": "ok", "out": str(phase6_out)}
+
+        combined_payload = {
+            "date": datetime.now(timezone.utc).date().isoformat(),
+            "weekly_pulse": {
+                "themes": [t.get("name") for t in (phase5_payload.get("topThemes") or []) if isinstance(t, dict)],
+                "quotes": [q.get("quote") for q in (phase5_payload.get("quotes") or []) if isinstance(q, dict)],
+                "action_ideas": [a.get("idea") for a in (phase5_payload.get("actionIdeas") or []) if isinstance(a, dict)],
+            },
+            "fee_scenario": phase5_payload_for_email.get("fee_scenario") or settings.fee_scenario,
+            "explanation_bullets": phase5_payload_for_email.get("explanation_bullets") or [],
+            "source_links": phase5_payload_for_email.get("source_links") or [],
+            "last_checked": phase5_payload_for_email.get("last_checked")
+            or datetime.now(timezone.utc).date().isoformat(),
+        }
+        combined_out.parent.mkdir(parents=True, exist_ok=True)
+        combined_out.write_text(json.dumps(combined_payload, indent=2) + "\n", encoding="utf-8")
+        tracker_payload["phaseStatus"]["combined_json"] = {"status": "ok", "out": str(combined_out)}
         tracker_payload["status"] = "succeeded"
         tracker_payload["error"] = None
         tracker_payload["endedAt"] = _now_utc_iso()
@@ -261,6 +287,7 @@ def run_weekly_pipeline(
                     "wordCount": phase5_payload.get("wordCount"),
                     "phase4": {"out": str(phase4_out)},
                     "phase6": {"out": str(phase6_out)},
+                    "combinedJson": {"out": str(combined_out)},
                 },
                 indent=2,
             )
@@ -276,6 +303,7 @@ def run_weekly_pipeline(
             phase5_out=str(phase5_out),
             phase6_out=str(phase6_out),
             report_out=str(report_out),
+            combined_out=str(combined_out),
         )
 
     except Exception as exc:  # noqa: BLE001
@@ -293,5 +321,6 @@ def run_weekly_pipeline(
             phase5_out=str(phase5_out),
             phase6_out=str(phase6_out),
             report_out=str(report_out),
+            combined_out=str(combined_out),
         )
 

@@ -69,8 +69,19 @@ def compose_body_text(phase5_payload: dict) -> str:
         f"review_count: {n_reviews}\n"
         f"generated_at_utc: {datetime.now(timezone.utc).isoformat()}\n"
     )
+    fee_block = ""
+    fee_scenario = str(phase5_payload.get("fee_scenario") or "").strip()
+    fee_bullets = phase5_payload.get("explanation_bullets") or []
+    fee_links = phase5_payload.get("source_links") or []
+    if fee_scenario and isinstance(fee_bullets, list) and fee_bullets:
+        fee_lines = [f"Fee Explanation: {fee_scenario}"]
+        fee_lines.extend([f"- {str(b).strip()}" for b in fee_bullets[:3] if str(b).strip()])
+        if isinstance(fee_links, list) and fee_links:
+            fee_lines.append("Source links:")
+            fee_lines.extend([f"- {str(u).strip()}" for u in fee_links if str(u).strip()])
+        fee_block = "\n\n" + "\n".join(fee_lines)
     greeting = f"Hi {recipient_name}," if recipient_name else "Hi,"
-    return f"{greeting}\n\n{note}{footer}".strip()
+    return f"{greeting}\n\n{note}{fee_block}{footer}".strip()
 
 
 def compose_body_html(body_text: str) -> str:

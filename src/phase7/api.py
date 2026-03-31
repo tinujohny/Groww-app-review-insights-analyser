@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from phase1.config import get_settings
 from phase2.collectors.target_collect import collect_app_store_until_target, collect_google_play_until_target
 from phase7.run_pipeline import FileRunTracker, run_weekly_pipeline
+from phase7.google_doc_append import append_weekly_json_to_google_doc
 
 
 def _default_phase2_jsonl_path() -> Path:
@@ -35,6 +36,8 @@ def _collect_phase2_jsonl_best_effort(*, out_dir: Path, max_reviews: int) -> Opt
     otherwise returns None so caller can surface a clear 400 error.
     """
     settings = get_settings()
+    if settings.disable_remote_collect:
+        return None
     sources: list[str] = []
     if settings.app_store_app_id:
         sources.append("app_store")
@@ -121,6 +124,10 @@ class BackfillRequest(BaseModel):
     trigger_type: str = Field(default="backfill")
 
 
+class GoogleDocAppendRequest(BaseModel):
+    doc_id: Optional[str] = Field(default=None, alias="docId")
+
+
 def create_app(*, api_base_dir: Path | None = None) -> FastAPI:
     app = FastAPI(title="ReviewPulse API (Phase 7)")
     cors_origins_raw = os.environ.get("REVIEW_PULSE_CORS_ORIGINS", "*")
@@ -154,8 +161,9 @@ def create_app(*, api_base_dir: Path | None = None) -> FastAPI:
                         status_code=400,
                         detail=(
                             "No Phase 2 JSONL found under data/phase2/collected_*.jsonl and remote collection "
-                            "is not configured/returned no rows. Set REVIEW_PULSE_APP_STORE_APP_ID and/or "
-                            "REVIEW_PULSE_GOOGLE_PLAY_PACKAGE, or pass phase2JsonlPath."
+                            "is not configured/returned no rows (or REVIEW_PULSE_DISABLE_REMOTE_COLLECT is set). "
+                            "Ingest CSV via review-pulse-phase2-ingest, set store IDs for collection, "
+                            "or pass phase2JsonlPath."
                         ),
                     )
 
@@ -354,6 +362,43 @@ def create_app(*, api_base_dir: Path | None = None) -> FastAPI:
             current = current + timedelta(weeks=1)
 
         return {"runs": [r.model_dump() for r in runs]}
+
+    @app.post("/runs/{run_id}/google-doc-append")
+    def append_run_to_google_doc(run_id: str, req: GoogleDocAppendRequest) -> Dict[str, Any]:
+        settings = get_settings()
+        if not settings.enable_google_doc_append:
+            raise HTTPException(status_code=400, detail="Google doc append is disabled by configuration")
+        run_payload = tracker.get_run(run_id)
+        if not run_payload:
+            raise HTTPException(status_code=404, detail="Run not found")
+        if run_payload.get("status") != "succeeded":
+            raise HTTPException(status_code=400, detail="Run must be succeeded before google doc append")
+        combined_path = out_dir / "runs" / run_id / "combined_payload.json"
+        if not combined_path.is_file():
+            raise HTTPException(status_code=404, detail="Combined payload not found for run")
+        doc_id = (req.doc_id or settings.google_doc_default_id or "").strip()
+        if not doc_id:
+            raise HTTPException(status_code=400, detail="docId is required (or set REVIEW_PULSE_GOOGLE_DOC_DEFAULT_ID)")
+        payload = json.loads(combined_path.read_text(encoding="utf-8"))
+        try:
+            res = append_weekly_json_to_google_doc(
+                doc_id=doc_id,
+                payload_json=payload,
+                out_dir=out_dir / "google_docs",
+                mcp_command=settings.google_mcp_append_command,
+                timeout_seconds=settings.google_mcp_timeout_seconds,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"google doc append failed: {exc}") from exc
+        run_payload.setdefault("phaseStatus", {})
+        run_payload["phaseStatus"]["google_doc_append"] = {
+            "status": res.get("append_status", "appended"),
+            "doc_id": doc_id,
+            "appended_at": res.get("appended_at"),
+            "storage_path": res.get("storage_path"),
+        }
+        tracker.set_run_payload(run_id, run_payload)
+        return res
 
     return app
 

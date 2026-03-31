@@ -95,6 +95,13 @@ If `recipientName` is provided (`--recipient-name` or `phase5.recipientName`), t
 
 Phase 7 exposes a small local HTTP API that the Web UI can call to run the weekly pipeline (Phase 4 -> Phase 5 -> Phase 6) for a given week bucket.
 
+### Stakeholder alignment (exports, window, artifacts)
+
+- **CSV-only / no auto-scrape:** set `REVIEW_PULSE_DISABLE_REMOTE_COLLECT=true` so the Phase 7 API does not fall back to App Store RSS or Play scraping when no Phase 2 JSONL exists. Ingest storefront CSVs with `review-pulse-phase2-ingest` instead.
+- **Rolling window:** `review-pulse-scheduler` defaults to `--weeks-back 12` (use `--weeks-back 8` for a shorter lookback).
+- **Theme legend:** Phase 4 output lists `themes` (name and supporting text). Use that JSON or the Web UI “Download Markdown” export for a readable theme summary alongside the weekly note.
+- **Internal IDs:** `review_id_internal` may appear in internal JSON for traceability; stakeholder-facing copy (email body, note) uses verbatim quotes only.
+
 ### Run backend
 
 ```bash
@@ -124,7 +131,7 @@ This repo supports Railway Docker deploy using:
 - `railway.toml` (`builder = "DOCKERFILE"`)
 
 Railway will build and run `review-pulse-api` from the container. The API reads `PORT` automatically.
-The container does not rely on committed `data/` artifacts; API fallback collection is used when no local Phase 2 JSONL is present.
+The container does not rely on committed `data/` artifacts unless you ship them; otherwise API fallback collection runs when no local Phase 2 JSONL is present and `REVIEW_PULSE_DISABLE_REMOTE_COLLECT` is not set.
 
 Set these Railway environment variables:
 
@@ -148,6 +155,6 @@ Deploy from `webui/` as the project root (or set Vercel "Root Directory" = `webu
 
 Set frontend env var in Vercel:
 
-- `NEXT_PUBLIC_API_BASE_URL=https://<your-railway-backend>.up.railway.app`
+- `NEXT_PUBLIC_API_BASE_URL=https://web-production-628ea.up.railway.app`
 
 Then redeploy the frontend so browser calls go to Railway backend.
