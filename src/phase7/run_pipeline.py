@@ -17,6 +17,7 @@ from phase4.phase4 import main as phase4_main
 from phase5.compose import build_weekly_pulse
 from phase5.phase5 import main as phase5_main
 from phase6.email_draft import (
+    LocalEmailDraftService,
     compose_body_html,
     compose_body_text,
     compose_subject,
@@ -219,30 +220,52 @@ def run_weekly_pipeline(
             if not (settings.email_username and settings.email_password):
                 raise RuntimeError("gmail sending requires REVIEW_PULSE_EMAIL_USERNAME and REVIEW_PULSE_EMAIL_PASSWORD")
 
-            send_id = send_gmail_email_smtp(
-                username=settings.email_username,
-                password=settings.email_password.get_secret_value(),
-                to_email=recipient_email,
-                subject=subject,
-                body_text=body_text,
-                body_html=body_html,
-            )
-            phase6_out.write_text(
-                json.dumps(
-                    {
-                        "status": "sent_provider",
-                        "provider": "gmail",
-                        "send_provider_id": send_id,
-                        "to_alias": recipient_email,
-                        "recipient_name": recipient_name,
-                        "subject": subject,
-                        "created_at": _now_utc_iso(),
-                    },
-                    indent=2,
+            try:
+                send_id = send_gmail_email_smtp(
+                    username=settings.email_username,
+                    password=settings.email_password.get_secret_value(),
+                    to_email=recipient_email,
+                    subject=subject,
+                    body_text=body_text,
+                    body_html=body_html,
                 )
-                + "\n",
-                encoding="utf-8",
-            )
+                phase6_out.write_text(
+                    json.dumps(
+                        {
+                            "status": "sent_provider",
+                            "provider": "gmail",
+                            "send_provider_id": send_id,
+                            "to_alias": recipient_email,
+                            "recipient_name": recipient_name,
+                            "subject": subject,
+                            "created_at": _now_utc_iso(),
+                        },
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            except OSError as exc:
+                # Hosted envs can block outbound SMTP; keep run successful by writing local fallback draft.
+                local_svc = LocalEmailDraftService(run_dir / "provider_none_drafts")
+                did = local_svc.create_draft(subject, body_text, body_html)
+                phase6_out.write_text(
+                    json.dumps(
+                        {
+                            "status": "send_failed_fallback_local",
+                            "provider": "gmail",
+                            "draft_provider_id": did,
+                            "to_alias": recipient_email,
+                            "recipient_name": recipient_name,
+                            "subject": subject,
+                            "warning": f"SMTP send failed: {exc}",
+                            "created_at": _now_utc_iso(),
+                        },
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
         else:
             res = create_draft_with_settings(
                 settings,
