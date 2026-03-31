@@ -20,6 +20,39 @@ from phase7.run_pipeline import FileRunTracker, run_weekly_pipeline
 from phase7.google_doc_append import append_weekly_json_to_google_doc
 
 
+def _mark_stale_run_if_needed(*, run_payload: Dict[str, Any], tracker: FileRunTracker) -> Dict[str, Any]:
+    if run_payload.get("status") != "running":
+        return run_payload
+    started_at = run_payload.get("startedAt")
+    if not isinstance(started_at, str) or not started_at.strip():
+        return run_payload
+    try:
+        started_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    except Exception:
+        return run_payload
+
+    max_run_seconds = int(get_settings().max_run_seconds)
+    age_seconds = (datetime.now(timezone.utc) - started_dt).total_seconds()
+    if age_seconds <= max_run_seconds:
+        return run_payload
+
+    updated = dict(run_payload)
+    updated["status"] = "failed"
+    updated["error"] = f"Run marked stale after exceeding {max_run_seconds}s without completion."
+    updated["endedAt"] = datetime.now(timezone.utc).isoformat()
+    phase_status = updated.get("phaseStatus") or {}
+    phase_status["phase_timeout"] = {
+        "status": "failed",
+        "reason": "stale_run_timeout",
+        "max_run_seconds": max_run_seconds,
+    }
+    updated["phaseStatus"] = phase_status
+    run_id = updated.get("runId")
+    if isinstance(run_id, str) and run_id:
+        tracker.set_run_payload(run_id, updated)
+    return updated
+
+
 def _default_phase2_jsonl_path() -> Path:
     p = Path("data/phase2")
     # Pick most recently modified collected_*.jsonl.
@@ -304,7 +337,7 @@ def create_app(*, api_base_dir: Path | None = None) -> FastAPI:
         r = tracker.get_run(run_id)
         if not r:
             raise HTTPException(status_code=404, detail="Run not found")
-        return r
+        return _mark_stale_run_if_needed(run_payload=r, tracker=tracker)
 
     @app.get("/reports/weekly")
     def get_weekly_report(week: str) -> Dict[str, Any]:

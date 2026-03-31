@@ -163,6 +163,14 @@ class AppSettings(BaseSettings):
         le=300,
         description="Timeout for the MCP append command execution.",
     )
+    max_run_seconds: int = Field(
+        default=1800,
+        ge=60,
+        le=86_400,
+        description=(
+            "Maximum allowed runtime for a single Phase 7 run before it is marked failed as stale."
+        ),
+    )
 
 
 @lru_cache
