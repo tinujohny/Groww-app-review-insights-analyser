@@ -54,6 +54,13 @@ def filter_phase2_rows_for_week(rows: List[Dict[str, Any]], week_bucket: str) ->
     return [r for r in rows if _resolve_week_bucket(r) == week_bucket]
 
 
+def _latest_available_week(rows: List[Dict[str, Any]]) -> Optional[str]:
+    weeks = sorted({w for r in rows if (w := _resolve_week_bucket(r))})
+    if not weeks:
+        return None
+    return weeks[-1]
+
+
 def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -141,7 +148,18 @@ def run_weekly_pipeline(
         phase2_rows = load_review_dicts(phase2_jsonl_path)
         week_rows = filter_phase2_rows_for_week(phase2_rows, week_bucket)
         if not week_rows:
-            raise RuntimeError(f"No Phase 2 reviews found for week {week_bucket} in {phase2_jsonl_path}")
+            latest_week = _latest_available_week(phase2_rows)
+            if not latest_week:
+                raise RuntimeError(
+                    f"No Phase 2 reviews found for week {week_bucket} in {phase2_jsonl_path}"
+                )
+            week_rows = filter_phase2_rows_for_week(phase2_rows, latest_week)
+            tracker_payload["phaseStatus"]["phase2_week_fallback"] = {
+                "status": "fallback",
+                "requested_week": week_bucket,
+                "used_week": latest_week,
+            }
+            week_bucket = latest_week
 
         filtered_phase2_path = run_dir / "phase2_week.jsonl"
         _write_jsonl(filtered_phase2_path, week_rows)

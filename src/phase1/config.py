@@ -115,11 +115,11 @@ class AppSettings(BaseSettings):
     )
 
     app_store_app_id: Optional[str] = Field(
-        default=None,
+        default="1404871703",
         description="Numeric App Store app id for RSS collection (see App Store URL id=…).",
     )
     google_play_package: Optional[str] = Field(
-        default=None,
+        default="com.nextbillion.groww",
         description="Android applicationId / package name for Play Store review collection.",
     )
 
