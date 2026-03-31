@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -32,6 +33,11 @@ RID_KEYS = ("reviewIdInternal", "review_id_internal")
 
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_transient_network_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return isinstance(exc, OSError) or "network is unreachable" in msg or "errno 101" in msg
 
 
 def _resolve_week_bucket(row: Dict[str, Any]) -> Optional[str]:
@@ -181,7 +187,21 @@ def run_weekly_pipeline(
         ]
         if chunked:
             phase4_argv.append("--chunked")
-        phase4_main(phase4_argv)
+        phase4_ok = False
+        last_phase4_exc: Optional[Exception] = None
+        for attempt in range(3):
+            try:
+                phase4_main(phase4_argv)
+                phase4_ok = True
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_phase4_exc = exc
+                if _is_transient_network_error(exc) and attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise
+        if not phase4_ok and last_phase4_exc:
+            raise last_phase4_exc
 
         tracker_payload["phaseStatus"]["phase4"] = {"status": "ok", "out": str(phase4_out)}
         tracker.set_run_payload(run_id, tracker_payload)
