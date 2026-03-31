@@ -142,12 +142,21 @@ Set these Railway environment variables:
 - `REVIEW_PULSE_EMAIL_USERNAME`
 - `REVIEW_PULSE_EMAIL_PASSWORD`
 - `REVIEW_PULSE_CORS_ORIGINS=https://<your-vercel-app>.vercel.app`
+- `REVIEW_PULSE_ENABLE_FEE_EXPLANATION=true`
+- `REVIEW_PULSE_FEE_SCENARIO=Mutual Fund Exit Load`
+- `REVIEW_PULSE_FEE_SOURCE_LINKS=https://groww.in/mutual-funds/amc`
+- `REVIEW_PULSE_ENABLE_GOOGLE_DOC_APPEND=false` (set `true` only after MCP command is configured)
+- `REVIEW_PULSE_GOOGLE_DOC_DEFAULT_ID=<google-doc-id>` (optional default)
+- `REVIEW_PULSE_GOOGLE_MCP_APPEND_COMMAND=<your-mcp-command-template>`
+- `REVIEW_PULSE_GOOGLE_MCP_TIMEOUT_SECONDS=30`
 
 Notes:
 
 - Server binds to `0.0.0.0` and uses `PORT` automatically (Railway compatible).
 - `REVIEW_PULSE_CORS_ORIGINS` accepts either `*` or a comma-separated list of origins.
 - Keep secrets only in Railway Variables (do not commit `.env`).
+- Google doc append is **MCP-command based**. Keep `REVIEW_PULSE_ENABLE_GOOGLE_DOC_APPEND=false` on Railway until `REVIEW_PULSE_GOOGLE_MCP_APPEND_COMMAND` is validated in that environment.
+- MCP command template supports placeholders: `{doc_id}` and `{payload_path}`.
 
 ### Vercel (frontend / Next.js)
 
