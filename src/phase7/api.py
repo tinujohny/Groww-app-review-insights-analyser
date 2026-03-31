@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -60,6 +61,11 @@ def _default_phase2_jsonl_path() -> Path:
     if not candidates:
         raise FileNotFoundError("No Phase 2 JSONL found under data/phase2/collected_*.jsonl")
     return candidates[0]
+
+
+def _start_pipeline_thread(**kwargs: Any) -> None:
+    t = threading.Thread(target=run_weekly_pipeline, kwargs=kwargs, daemon=True)
+    t.start()
 
 
 def _collect_phase2_jsonl_best_effort(*, out_dir: Path, max_reviews: int) -> Optional[Path]:
@@ -202,8 +208,7 @@ def create_app(*, api_base_dir: Path | None = None) -> FastAPI:
 
         run_id = tracker.create_run(week_bucket=req.week_bucket, trigger_type=req.trigger_type)
 
-        background_tasks.add_task(
-            run_weekly_pipeline,
+        _start_pipeline_thread(
             run_id=run_id,
             week_bucket=req.week_bucket,
             phase2_jsonl_path=phase2_path,
@@ -376,8 +381,7 @@ def create_app(*, api_base_dir: Path | None = None) -> FastAPI:
             bucket = f"{current.isocalendar().year}-W{current.isocalendar().week:02d}"
             run_id = tracker.create_run(week_bucket=bucket, trigger_type=trigger_type)
             phase2_path = phase2_jsonl_path or _default_phase2_jsonl_path()
-            background_tasks.add_task(
-                run_weekly_pipeline,
+            _start_pipeline_thread(
                 run_id=run_id,
                 week_bucket=bucket,
                 phase2_jsonl_path=phase2_path,

@@ -164,7 +164,7 @@ class AppSettings(BaseSettings):
         description="Timeout for the MCP append command execution.",
     )
     max_run_seconds: int = Field(
-        default=1800,
+        default=600,
         ge=60,
         le=86_400,
         description=(
